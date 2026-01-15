@@ -125,6 +125,14 @@ class ParkingLot{
         bool IsEmpty(){
             return curr==0;
         }
+        bool isDuplicateEntry(vehicle* v){
+            for(int i=0; i<spots.size(); i++){
+                if(spots[i] != nullptr && spots[i]->getPlate()==v->getPlate()){
+                    return true;
+                }
+            }
+            return false;
+        }
 
         void debug() {
             cout << "\n--- [DEBUG VIEW] ---" << endl;
@@ -166,6 +174,11 @@ class ParkingLot{
                 }
                 bestSpot = freeCarSpots.top();
                 freeCarSpots.pop();
+            }
+            if(isDuplicateEntry(v)){
+                delete v;
+                cout<<"Duplicate Entry!"<<endl;
+                return;
             }
             spots[bestSpot] = v;
             curr++;

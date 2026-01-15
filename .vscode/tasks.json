@@ -8,6 +8,8 @@
                 "-fdiagnostics-color=always",
                 "-g",
                 "${file}",
+                "-lsqlite3", // Add this
+                "-static",
                 "-o",
                 "${fileDirname}\\${fileBasenameNoExtension}.exe"
             ],

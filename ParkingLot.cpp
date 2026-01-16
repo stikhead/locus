@@ -4,8 +4,21 @@
 #include <functional>
 #include<sqlite3.h>
 #include<string>
+#include <ctime>
+int watch = 0;
 using namespace std;
-
+void duration(time_t entry, time_t exitTime){
+    double total_seconds = difftime(exitTime, entry);
+    int total_seconds_int = static_cast<int>(total_seconds);
+    int hours = total_seconds_int / 3600;
+    int minutes = (total_seconds_int % 3600) / 60;
+    int seconds = total_seconds_int % 60;
+    cout << "---------------------------------" << endl;
+    cout << "Total Duration: " 
+         << hours << "h " 
+         << minutes << "m " 
+         << seconds << "s" << endl;
+}
 static int callback(void* data, int argc, char** argv, char** azColName)
 {
     int i;
@@ -21,80 +34,68 @@ static int callback(void* data, int argc, char** argv, char** azColName)
     protected:
         string licensePlate;
         string ownerName;
-        int entryTime;
+        time_t entryTime;
+        int rate_per_hour;
     public: 
         vehicle(){};
-        vehicle(string plate, string name, int time){
+        vehicle(string plate, string name, time_t time, int rate){
             licensePlate = plate;
             ownerName = name;
             entryTime = time;
+            rate_per_hour = rate;
         }
         string getPlate() const {
             return licensePlate;
         }
-        int getTime()const{
+        time_t getTime()const{
             return entryTime;
         }
+        int getRate()const{
+            return rate_per_hour;
+        }
         virtual string getType()=0;
-        virtual int calculateFee(int exit)=0;
+        double calculateFee(time_t exitTime){
+            time_t entry = getTime();
+            duration(entry, exitTime);
+            double total_seconds = difftime(exitTime, entry);
+            double hours_fractional = total_seconds / 3600.0;
+            double total_cost = hours_fractional * rate_per_hour;
+            return total_cost;
+        };
         virtual ~vehicle() {};
 };
 class bike : public vehicle {
-    int rate = 20;
     public:
         bike(){};
-        bike(string plate, string name, int time) : vehicle(plate, name, time) {}
+        bike(string plate, string name, time_t time) : vehicle(plate, name, time, 20) {}
+                bike(string plate, string name, time_t time, int rate) : vehicle(plate, name, time, rate) {}
         
-        int calculateFee(int exit)override{
-            int entry = getTime();
-            int hours = (exit-entry);
-            if(hours < 0) hours = 0;
-            return hours*rate;
-        }
         string getType()override{
             return "Bike"; 
         }
 };
 
 class EVBike : public bike {
-    int rate = 5;
     public:
-        EVBike(){};
-        EVBike(string plate, string name, int time) : bike(plate, name, time){}
-        int calculateFee(int exit)override{
-            int entry = getTime();
-            int hours = (exit-entry);
-            if(hours < 0) hours = 0;
-            return hours*rate;
-        }
+    EVBike(){};
+        EVBike(string plate, string name, time_t time) : bike(plate, name, time, 5){}
 };
 class Car : public vehicle {
-    int rate = 50;
     public:
-        Car(){};
-        Car (string plate, string name, int time) : vehicle(plate, name, time) {};
-        int calculateFee(int exit)override{
-            int entry = getTime();
-            int hours = (exit-entry);
-            if(hours < 0) hours = 0;
-            return hours*rate;
-        }
+    Car(){};
+        Car (string plate, string name, time_t time) : vehicle(plate, name, time, 50) {};
+        Car (string plate, string name, time_t time, int rate) : vehicle(plate, name, time, rate) {};
+
         
         string getType()override{
             return "Car"; 
         }
 };
 class EVCar : public Car {
-    int rate = 25;
     public:
-        EVCar(){};
-        EVCar(string plate, string name, int time) : Car(plate, name, time){}
-        int calculateFee(int exit)override{
-            int entry = getTime();
-            int hours = (exit-entry);
-            if(hours < 0) hours = 0;
-            return hours*rate;
-        }
+    EVCar(){};
+        EVCar(string plate, string name, time_t time) : Car(plate, name, time, 25){}
+
 };
 class ParkingLot{
     private:
@@ -105,8 +106,8 @@ class ParkingLot{
         priority_queue<int, vector<int>, greater<int>> freeBikeSpots;
     public:
         ParkingLot(){
-            spots.resize(100, nullptr);
-            capacity = 100;
+            spots.resize(10, nullptr);
+            capacity = 10;
             curr = 0;
             for(int i=0; i<capacity; i++){
                 if(i>=2 && i<5){
@@ -182,8 +183,9 @@ class ParkingLot{
             }
             spots[bestSpot] = v;
             curr++;
-            cout << "Parked "<< type<<" in "<< bestSpot << endl;
-
+            time_t entry = v->getTime();
+            cout << "Parked "<< type<<" in "<< bestSpot << " at "<< ctime(&entry) << endl;
+            watch++;
             //------------------------------------------- MOVE TO PRIORITY QUEUES --------------------------------------------
             
             
@@ -221,7 +223,8 @@ class ParkingLot{
             // ----------------------------------------------------------------------------------------
         }
 
-        void leave(string plate, int exitTime) {
+        void leave(string plate) {
+            time_t exitTime = time(nullptr);
             if(IsEmpty()) {
                 cout<<"Lot is empty!"<<endl;
                 return;
@@ -229,11 +232,10 @@ class ParkingLot{
             for(int i=0; i<capacity; i++){
                 if(spots[i] != nullptr && spots[i]->getPlate() == plate){
                     // calc
-                    int fee = spots[i]->calculateFee(exitTime);
+                    double fee = spots[i]->calculateFee(exitTime);
                     // output
                     cout << "\n--- RECEIPT ---" <<endl;
                     cout << "Vehicle: " << spots[i]->getPlate() <<endl;
-                    cout << "Hours: " << (exitTime - spots[i]->getTime()) <<endl; 
                     cout << "Total Bill: $" << fee << endl;
                     cout << "---------------" << endl;
                     // memory
@@ -247,6 +249,7 @@ class ParkingLot{
                     delete spots[i];                         
                     spots[i] = nullptr;
                     curr--;
+                    watch++;
                     return;
                 }
             }
@@ -265,36 +268,37 @@ class ParkingLot{
 
 void parkTool(ParkingLot* pl){
     string name, plate;
-    int time;
+    time_t entry_time = time(nullptr);
     int type;
     
     cout << "\nSELECT TYPE: 1.Car  2.Bike  3.EV-Car  4.EV-Bike" << endl;
     cout << "Input: ";
     cin >> type;
-
-    cout << "Enter Name, Plate, EntryTime (e.g. Rahul DL01 10): ";
-    cin >> name >> plate >> time;
+    cout << "Current time: "<< ctime(&entry_time)<<endl;
+    cout << "Enter Name, Plate, (e.g. Rahul DL01): ";
+    
+    cin >> name >> plate;
     vehicle* v = nullptr;
 
     switch (type){
         case 1:
-            v = new Car(plate, name, time);
+            v = new Car(plate, name, entry_time);
             break;
         case 2:
-            v = new bike(plate, name, time);
+            v = new bike(plate, name, entry_time);
             break;
         case 3:
-            v = new EVCar(plate, name, time);
+            v = new EVCar(plate, name, entry_time);
             break;
         case 4:
-            v = new EVBike(plate, name, time);
+            v = new EVBike(plate, name, entry_time);
             break;
         default:
             break;
     }
     if (v == nullptr) {
         cout << "Invalid Vehicle Type!" << endl;
-        return; // Don't call park()
+        return;
     }
     pl->park(v);
     pl->debug();
@@ -303,10 +307,9 @@ void parkTool(ParkingLot* pl){
 void leaveTool(ParkingLot* pl){
     string p;
     int t;
-    cout<<"Enter number plate and exit time: ";
+    cout<<"Enter number plate: ";
     cin >> p;
-    cin >> t;
-    pl->leave(p, t);
+    pl->leave(p);
     pl->debug();
 }
 

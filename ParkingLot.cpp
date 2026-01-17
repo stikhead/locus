@@ -5,8 +5,9 @@
 #include<sqlite3.h>
 #include<string>
 #include <ctime>
-int watch = 0;
+#include<fstream>
 using namespace std;
+
 void duration(time_t entry, time_t exitTime){
     double total_seconds = difftime(exitTime, entry);
     int total_seconds_int = static_cast<int>(total_seconds);
@@ -19,6 +20,7 @@ void duration(time_t entry, time_t exitTime){
          << minutes << "m " 
          << seconds << "s" << endl;
 }
+
 static int callback(void* data, int argc, char** argv, char** azColName)
 {
     int i;
@@ -30,7 +32,9 @@ static int callback(void* data, int argc, char** argv, char** azColName)
 
     printf("\n");
     return 0;
-}class vehicle {
+}
+
+class vehicle {
     protected:
         string licensePlate;
         string ownerName;
@@ -45,6 +49,7 @@ static int callback(void* data, int argc, char** argv, char** azColName)
             rate_per_hour = rate;
         }
         string getPlate() const {
+
             return licensePlate;
         }
         time_t getTime()const{
@@ -79,6 +84,9 @@ class EVBike : public bike {
     public:
     EVBike(){};
         EVBike(string plate, string name, time_t time) : bike(plate, name, time, 5){}
+        string getType()override{
+            return "EV"; 
+        }
 };
 class Car : public vehicle {
     public:
@@ -95,27 +103,27 @@ class EVCar : public Car {
     public:
     EVCar(){};
         EVCar(string plate, string name, time_t time) : Car(plate, name, time, 25){}
-
+        string getType()override{
+                    return "EV"; 
+                }
 };
 class ParkingLot{
     private:
-        vector<vehicle*>spots;
+        vector<vector<vehicle*>>spots;
         int capacity;
         int curr;
-        priority_queue<int, vector<int>, greater<int>> freeCarSpots;
-        priority_queue<int, vector<int>, greater<int>> freeBikeSpots;
+        priority_queue<pair<int, int>, vector<pair<int, int>>, greater<pair<int, int>>> freeCarSpots;
+        priority_queue<pair<int, int>, vector<pair<int, int>>, greater<pair<int, int>>> freeBikeSpots;
+        priority_queue<pair<int, int>, vector<pair<int, int>>, greater<pair<int, int>>> freeEVspots;
     public:
         ParkingLot(){
-            spots.resize(10, nullptr);
+            spots.resize(10, vector<vehicle*>(3, nullptr));
             capacity = 10;
             curr = 0;
             for(int i=0; i<capacity; i++){
-                if(i>=2 && i<5){
-                    freeBikeSpots.push(i);
-                }
-                else {
-                    freeCarSpots.push(i);
-                }
+                freeCarSpots.push({i, 0});
+                freeBikeSpots.push({i, 1});
+                freeEVspots.push({i, 2});
             }
         }
         
@@ -127,8 +135,19 @@ class ParkingLot{
             return curr==0;
         }
         bool isDuplicateEntry(vehicle* v){
+            string type = v->getType();
+            int search;
+            if(type=="Car"){
+                search = 0;
+            }
+            else if(type=="Bike"){
+                search = 1;
+            }
+            else {
+                search = 2;
+            }
             for(int i=0; i<spots.size(); i++){
-                if(spots[i] != nullptr && spots[i]->getPlate()==v->getPlate()){
+                if(spots[i][search] != nullptr && spots[i][search]->getPlate()==v->getPlate()){
                     return true;
                 }
             }
@@ -136,14 +155,27 @@ class ParkingLot{
         }
 
         void debug() {
-            cout << "\n--- [DEBUG VIEW] ---" << endl;
-            for(int i=0; i<this->capacity; i++) {
-                if(this->spots[i] == nullptr) 
-                    cout << "Slot " << i << ": [ Empty ]" << endl;
-                else 
-                    cout << "Slot " << i << ": [ " << this->spots[i]->getPlate() << " ]" << endl;
+            cout << "\n======================== [ LIVE MAP ] ========================" << endl;
+            cout << "| Slot |      CAR       |      BIKE      |    EV / OTHER  |" << endl;
+            cout << "|------|----------------|----------------|----------------|" << endl;
+
+            for(int i=0; i<capacity; i++) {
+                if(i < 10) cout << "|  " << i << "   |"; 
+                else       cout << "|  " << i << "  |";
+                for(int j=0; j<3; j++) {
+                    if(spots[i][j] == nullptr) {
+                        cout << "    . . . .     |"; 
+                    } 
+                    else {
+                        string p = spots[i][j]->getPlate();
+                        if (p.length() <= 4)      cout << "      " << p << "      |";
+                        else if (p.length() <= 6) cout << "   " << p << "     |";
+                        else                      cout << "  " << p << "   |";
+                    }
+                }
+                cout << endl;
             }
-            cout << "--------------------\n" << endl;
+            cout << "==========================================================" << endl;
         }
         
         void park(vehicle* v){
@@ -152,8 +184,9 @@ class ParkingLot{
                 delete v;
                 return;
             }
+
             string type = v->getType();
-            int bestSpot = -1;
+            pair<int, int> bestSpot = {-1, -1};
             if(type=="Bike"){
                 if(freeBikeSpots.empty()){
                     cout<<"No Empty Bike Lane!"<<endl;
@@ -163,6 +196,7 @@ class ParkingLot{
                 bestSpot = freeBikeSpots.top();
                 freeBikeSpots.pop();
             }
+
             else if(type=="Car"){
                 if(IsFull()){
                     cout<<"Full! couldnt park"<<endl;
@@ -176,20 +210,32 @@ class ParkingLot{
                 bestSpot = freeCarSpots.top();
                 freeCarSpots.pop();
             }
+
+            else {
+                if(IsFull()){
+                    cout<<"Full! couldnt park"<<endl;
+                    delete v;
+                    return;
+                }
+                if(freeEVspots.empty()){
+                    cout<<"No Empty EV Lane!"<<endl;
+                    return;
+                }
+                bestSpot = freeEVspots.top();
+                freeEVspots.pop();
+            }
+
             if(isDuplicateEntry(v)){
                 delete v;
                 cout<<"Duplicate Entry!"<<endl;
                 return;
             }
-            spots[bestSpot] = v;
+
+            spots[bestSpot.first][bestSpot.second] = v;
             curr++;
             time_t entry = v->getTime();
-            cout << "Parked "<< type<<" in "<< bestSpot << " at "<< ctime(&entry) << endl;
-            watch++;
+            cout << "Parked "<< type<<" in "<< bestSpot.first << " at "<< ctime(&entry) << endl;
             //------------------------------------------- MOVE TO PRIORITY QUEUES --------------------------------------------
-            
-            
-            
             // string type = v->getType();
             // vector<pair<int, int>> searchZone;
             // if(type=="Bike"){
@@ -229,38 +275,38 @@ class ParkingLot{
                 cout<<"Lot is empty!"<<endl;
                 return;
             }
+            
             for(int i=0; i<capacity; i++){
-                if(spots[i] != nullptr && spots[i]->getPlate() == plate){
-                    // calc
-                    double fee = spots[i]->calculateFee(exitTime);
-                    // output
-                    cout << "\n--- RECEIPT ---" <<endl;
-                    cout << "Vehicle: " << spots[i]->getPlate() <<endl;
-                    cout << "Total Bill: $" << fee << endl;
-                    cout << "---------------" << endl;
-                    // memory
-                    if(i>=2 && i<=4){
-                        freeBikeSpots.push(i);
+                for(int j=0; j<3; j++){
+                    if(spots[i][j] != nullptr && spots[i][j]->getPlate() == plate){
+                        // calc
+                        double fee = spots[i][j]->calculateFee(exitTime);
+                        // output
+                        cout << "\n--- RECEIPT ---" <<endl;
+                        cout << "Vehicle: " << spots[i][j]->getPlate() <<endl;
+                        cout << "Total Bill: $" << fee << endl;
+                        cout << "---------------" << endl;
+                        // memory
+                        if(j==0) freeCarSpots.push({i, 0});
+                        else if(j==1) freeBikeSpots.push({i, 1});
+                        else if(j==2) freeEVspots.push({i, 2});
+                        cout << "Slot " << i << " is now free." << endl;
+                        delete spots[i][j];                         
+                        spots[i][j] = nullptr;
+                        curr--;
+                        return;
                     }
-                    else {
-                        freeCarSpots.push(i);
-                    }
-                    cout << "Slot " << i << " is now free." << endl;
-                    delete spots[i];                         
-                    spots[i] = nullptr;
-                    curr--;
-                    watch++;
-                    return;
                 }
-            }
             cout << "Vehicle " << plate << " not found!" <<endl;
         }
         ~ParkingLot() {
             for (int i = 0; i < capacity; i++) {
-                if (spots[i] != nullptr) {
-                    delete spots[i];
-                    spots[i] = nullptr;
-                }
+               for(int j=0; j<3; j++){
+                    if (spots[i][j] != nullptr) {
+                        delete spots[i][j];
+                        spots[i][j] = nullptr;
+                    }
+               }    
             }
             cout << "Parking Lot Closed. All vehicles cleared." << endl;
         }
@@ -314,16 +360,16 @@ void leaveTool(ParkingLot* pl){
 }
 
 int main(){
-    sqlite3* db;
-    int exit = 0;
-    exit = sqlite3_open("parkingLot.db", &db);
-    if(exit){
-        cout<<"ERROR CREATING DATABSE: "<<sqlite3_errmsg(db)<<endl;
-    }
-    else {
-        cout<<"SUCCESSFULLY CREATED DB!"<<endl;
-    }
-    sqlite3_close(db);
+    // sqlite3* db;
+    // int exit = 0;
+    // exit = sqlite3_open("parkingLot.db", &db);
+    // if(exit){
+    //     cout<<"ERROR CREATING DATABSE: "<<sqlite3_errmsg(db)<<endl;
+    // }
+    // else {
+    //     cout<<"SUCCESSFULLY CREATED DB!"<<endl;
+    // }
+    // sqlite3_close(db);
     cout << "--- WELCOME TO LOCUS ---" << endl;
     bool IsTrue = true;
     ParkingLot* pl = new ParkingLot();
